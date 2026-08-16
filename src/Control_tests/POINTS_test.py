@@ -1,0 +1,133 @@
+import time
+
+from picarx import Picarx
+import math
+
+
+import numpy as np
+
+
+class Ackermann_Kinomatic:
+    # Ackerman Class using inputs of rear wheel velocity(power applied to the motor), and steering angle
+    # Constraints assumed to come from both wheel sets
+    #
+    # (states) q = [X_front,Y_front, Angle_orientation, Angle_steering(respect to orientation)]
+    # (inputs) u= [Velocity, ang_steer] {volocity is applied to the back wheels, angle steer at front wheeels}
+
+    # Q = q_derivative = function(u,q)
+
+    def __init__(self,state,input,Wheel_Width = 11.5,Wheel_Length = 9.8):#cm
+        self.Len = Wheel_Length
+        self.Wid = Wheel_Width
+
+        self.q = state #[X,Y,Head,Steer]
+        self.u = input #[Volocity,steer_angle]
+
+    def function(self,q,u):
+        f = np.zeros(4)
+        f[0] = u[0] * np.cos(q[2])
+        f[1] = u[0] * np.sin(q[2])
+        f[2] = u[0]/self.Len * np.sin(q[3])
+        f[3] = 0
+        return f
+
+    def Input(self,Percent):
+        if Percent <= 20:
+            return Percent * 1.25
+        else:
+            return 21 * np.exp(Percent*.008703)
+
+    def rk_four(self,f,q,u,T):
+
+        k_1 = f(q,u)
+        k_2 = f(q + T/2.0 * k_1,u)
+        k_3 = f(q + T/2.0 * k_2,u)
+        k_4 = f(q + T * k_3,u)
+
+        q_new = q + T/6.0 *(k_1 + 2.0*k_2 + 2.0*k_3 + k_4)
+        self.q = q_new
+        return q_new
+
+    def SPIN(self,V_wheels,T):
+        heading_change = T * V_wheels * 11.5/(16*4)
+        return heading_change
+#----------------------------------------------------------------------------------------
+def AtoB(x_goal,y_goal,x_current,y_current,heading,ANG_CO=.15,MAG_CO=.8):
+
+    X = x_goal - x_current
+    Y = y_goal - y_current
+
+
+    print("X,Y current")
+    print(x_current)
+    print(y_current)
+
+    MAG = math.sqrt(X**2 + Y**2)
+    Angle = math.degrees(math.atan(Y/X))
+    print(Angle)
+
+
+    #FIX angle based on region position
+    if X >=0: # +x,+y,-y
+        Angle = Angle
+    elif X <0:# -x,+y,-y
+        Angle = 180 + Angle
+
+    Error_MAG = MAG
+    Error_Angle = Angle - heading
+
+    if Error_MAG < 5:
+        Error_MAG = 0
+    return (Error_Angle * ANG_CO),(Error_MAG * MAG_CO) #adjustable constant
+
+#----------------------------------------------------------------------------------------
+q = np.array([0,0,0,0])
+u = np.array([0,0])
+CAR = Ackermann_Kinomatic(state=q,input=u)
+
+GOAL = [50,50]
+px = Picarx()
+
+T1 = time.time()
+if __name__ == "__main__":
+    try:
+        while True:
+
+            
+            T2 = time.time()
+            T = T2 - T1
+            T = .2
+            #CAR.rk_four(CAR.function, CAR.q, CAR.u, T)
+            angle,mag = AtoB(GOAL[0],GOAL[1],CAR.q[0],CAR.q[1],CAR.q[2])
+            Volo =  CAR.Input(mag)
+
+            CAR.u = [Volo,angle*1]
+            CAR.q[2] = CAR.u[1]
+            px.set_dir_servo_angle(-angle)
+            px.forward(mag)
+            T1 = time.time()
+            time.sleep(.2)
+            CAR.rk_four(CAR.function, CAR.q, CAR.u, T)
+            
+
+
+
+    finally:
+        px.stop()
+
+
+
+
+
+
+
+
+
+
+"""
+#return Error_MAG,Error_Angle
+#ADD handling for extreme angles and close mag
+if abs(Error_Angle) > 50:
+    px.set_motor_speed(1, -20*Error_Angle/abs(Error_Angle))  #1 = Left , speed = 30 * +-/+   finds the direction of error
+    px.set_motor_speed(2, 20*Error_Angle/abs(Error_Angle))  #2 = Right , speed = 30 * +-/+
+"""

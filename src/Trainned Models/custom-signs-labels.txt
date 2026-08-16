@@ -1,0 +1,9 @@
+car_wheel
+cone
+duck
+no_entry
+ow_left
+ow_right
+stop
+yellow_line
+yield
